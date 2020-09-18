@@ -1,73 +1,62 @@
-// MultipartFormDataTests.swift
 //
-// Copyright (c) 2014–2015 Alamofire Software Foundation (http://alamofire.org/)
+//  MultipartFormDataTests.swift
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+//  Copyright (c) 2014-2018 Alamofire Software Foundation (http://alamofire.org/)
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+//  Permission is hereby granted, free of charge, to any person obtaining a copy
+//  of this software and associated documentation files (the "Software"), to deal
+//  in the Software without restriction, including without limitation the rights
+//  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//  copies of the Software, and to permit persons to whom the Software is
+//  furnished to do so, subject to the following conditions:
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+//  The above copyright notice and this permission notice shall be included in
+//  all copies or substantial portions of the Software.
+//
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//  THE SOFTWARE.
+//
 
 import Alamofire
 import Foundation
 import XCTest
 
 struct EncodingCharacters {
-    static let CRLF = "\r\n"
+    static let crlf = "\r\n"
 }
 
 struct BoundaryGenerator {
     enum BoundaryType {
-        case Initial, Encapsulated, Final
+        case initial, encapsulated, final
     }
 
-    static func boundary(#boundaryType: BoundaryType, boundaryKey: String) -> String {
+    static func boundary(forBoundaryType boundaryType: BoundaryType, boundaryKey: String) -> String {
         let boundary: String
 
         switch boundaryType {
-        case .Initial:
-            boundary = "--\(boundaryKey)\(EncodingCharacters.CRLF)"
-        case .Encapsulated:
-            boundary = "\(EncodingCharacters.CRLF)--\(boundaryKey)\(EncodingCharacters.CRLF)"
-        case .Final:
-            boundary = "\(EncodingCharacters.CRLF)--\(boundaryKey)--\(EncodingCharacters.CRLF)"
+        case .initial:
+            boundary = "--\(boundaryKey)\(EncodingCharacters.crlf)"
+        case .encapsulated:
+            boundary = "\(EncodingCharacters.crlf)--\(boundaryKey)\(EncodingCharacters.crlf)"
+        case .final:
+            boundary = "\(EncodingCharacters.crlf)--\(boundaryKey)--\(EncodingCharacters.crlf)"
         }
 
         return boundary
     }
 
-    static func boundaryData(#boundaryType: BoundaryType, boundaryKey: String) -> NSData {
-        return BoundaryGenerator.boundary(
-            boundaryType: boundaryType,
-            boundaryKey: boundaryKey
-        ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+    static func boundaryData(boundaryType: BoundaryType, boundaryKey: String) -> Data {
+        Data(BoundaryGenerator.boundary(forBoundaryType: boundaryType,
+                                        boundaryKey: boundaryKey).utf8)
     }
 }
 
-private func temporaryFileURL() -> NSURL {
-    let tempDirectoryURL = NSURL(fileURLWithPath: NSTemporaryDirectory())!
-    let directoryURL = tempDirectoryURL.URLByAppendingPathComponent("com.alamofire.test/multipart.form.data")
-
-    let fileManager = NSFileManager.defaultManager()
-    fileManager.createDirectoryAtURL(directoryURL, withIntermediateDirectories: true, attributes: nil, error: nil)
-
-    let fileName = NSUUID().UUIDString
-    let fileURL = directoryURL.URLByAppendingPathComponent(fileName)
-
-    return fileURL
-}
+private func temporaryFileURL() -> URL { BaseTestCase.testDirectoryURL.appendingPathComponent(UUID().uuidString) }
 
 // MARK: -
 
@@ -87,15 +76,15 @@ class MultipartFormDataPropertiesTestCase: BaseTestCase {
     func testThatContentLengthMatchesTotalBodyPartSize() {
         // Given
         let multipartFormData = MultipartFormData()
-        let data1 = "Lorem ipsum dolor sit amet.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
-        let data2 = "Vim at integre alterum.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+        let data1 = Data("Lorem ipsum dolor sit amet.".utf8)
+        let data2 = Data("Vim at integre alterum.".utf8)
 
         // When
-        multipartFormData.appendBodyPart(data: data1, name: "data1")
-        multipartFormData.appendBodyPart(data: data2, name: "data2")
+        multipartFormData.append(data1, withName: "data1")
+        multipartFormData.append(data2, withName: "data2")
 
         // Then
-        let expectedContentLength = UInt64(data1.length + data2.length)
+        let expectedContentLength = UInt64(data1.count + data2.count)
         XCTAssertEqual(multipartFormData.contentLength, expectedContentLength, "content length should match expected value")
     }
 }
@@ -103,178 +92,212 @@ class MultipartFormDataPropertiesTestCase: BaseTestCase {
 // MARK: -
 
 class MultipartFormDataEncodingTestCase: BaseTestCase {
-    let CRLF = EncodingCharacters.CRLF
+    let crlf = EncodingCharacters.crlf
 
     func testEncodingDataBodyPart() {
         // Given
         let multipartFormData = MultipartFormData()
-        let data = "Lorem ipsum dolor sit amet.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+
+        let data = Data("Lorem ipsum dolor sit amet.".utf8)
+        multipartFormData.append(data, withName: "data")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(data: data, name: "data")
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = (
-                BoundaryGenerator.boundary(boundaryType: .Initial, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"data\"\(CRLF)\(CRLF)" +
-                "Lorem ipsum dolor sit amet." +
-                BoundaryGenerator.boundary(boundaryType: .Final, boundaryKey: boundary)
-            ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            let expectedString = (
+                BoundaryGenerator.boundary(forBoundaryType: .initial, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"data\"\(crlf)\(crlf)" +
+                    "Lorem ipsum dolor sit amet." +
+                    BoundaryGenerator.boundary(forBoundaryType: .final, boundaryKey: boundary)
+            )
+            let expectedData = Data(expectedString.utf8)
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "encoded data should match expected data")
         }
     }
 
     func testEncodingMultipleDataBodyParts() {
         // Given
         let multipartFormData = MultipartFormData()
-        let french = "français".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
-        let japanese = "日本語".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
-        let emoji = "😃👍🏻🍻🎉".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+
+        let frenchData = Data("français".utf8)
+        let japaneseData = Data("日本語".utf8)
+        let emojiData = Data("😃👍🏻🍻🎉".utf8)
+
+        multipartFormData.append(frenchData, withName: "french")
+        multipartFormData.append(japaneseData, withName: "japanese", mimeType: "text/plain")
+        multipartFormData.append(emojiData, withName: "emoji", mimeType: "text/plain")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(data: french, name: "french")
-        multipartFormData.appendBodyPart(data: japanese, name: "japanese", mimeType: "text/plain")
-        multipartFormData.appendBodyPart(data: emoji, name: "emoji", mimeType: "text/plain")
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = (
-                BoundaryGenerator.boundary(boundaryType: .Initial, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"french\"\(CRLF)\(CRLF)" +
-                "français" +
-                BoundaryGenerator.boundary(boundaryType: .Encapsulated, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"japanese\"\(CRLF)" +
-                "Content-Type: text/plain\(CRLF)\(CRLF)" +
-                "日本語" +
-                BoundaryGenerator.boundary(boundaryType: .Encapsulated, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"emoji\"\(CRLF)" +
-                "Content-Type: text/plain\(CRLF)\(CRLF)" +
-                "😃👍🏻🍻🎉" +
-                BoundaryGenerator.boundary(boundaryType: .Final, boundaryKey: boundary)
-            ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            let expectedString = (
+                BoundaryGenerator.boundary(forBoundaryType: .initial, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"french\"\(crlf)\(crlf)" +
+                    "français" +
+                    BoundaryGenerator.boundary(forBoundaryType: .encapsulated, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"japanese\"\(crlf)" +
+                    "Content-Type: text/plain\(crlf)\(crlf)" +
+                    "日本語" +
+                    BoundaryGenerator.boundary(forBoundaryType: .encapsulated, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"emoji\"\(crlf)" +
+                    "Content-Type: text/plain\(crlf)\(crlf)" +
+                    "😃👍🏻🍻🎉" +
+                    BoundaryGenerator.boundary(forBoundaryType: .final, boundaryKey: boundary)
+            )
+            let expectedData = Data(expectedString.utf8)
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "encoded data should match expected data")
         }
     }
 
+    #if !SWIFT_PACKAGE
     func testEncodingFileBodyPart() {
         // Given
         let multipartFormData = MultipartFormData()
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
+
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = NSMutableData()
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedData = Data()
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedData.append(try! Data(contentsOf: unicornImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "data should match expected data")
         }
     }
 
     func testEncodingMultipleFileBodyParts() {
         // Given
         let multipartFormData = MultipartFormData()
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
+
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+        multipartFormData.append(rainbowImageURL, withName: "rainbow")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        multipartFormData.appendBodyPart(fileURL: rainbowImageURL, name: "rainbow")
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = NSMutableData()
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedData = Data()
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            expectedData.append(try! Data(contentsOf: unicornImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "data should match expected data")
         }
     }
 
     func testEncodingStreamBodyPart() {
         // Given
         let multipartFormData = MultipartFormData()
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let unicornDataLength = UInt64(NSData(contentsOfURL: unicornImageURL)!.length)
-        let unicornStream = NSInputStream(URL: unicornImageURL)!
+
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let unicornDataLength = UInt64((try! Data(contentsOf: unicornImageURL)).count)
+        let unicornStream = InputStream(url: unicornImageURL)!
+
+        multipartFormData.append(unicornStream,
+                                 withLength: unicornDataLength,
+                                 name: "unicorn",
+                                 fileName: "unicorn.png",
+                                 mimeType: "image/png")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(
-            stream: unicornStream,
-            length: unicornDataLength,
-            name: "unicorn",
-            fileName: "unicorn.png",
-            mimeType: "image/png"
-        )
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = NSMutableData()
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedData = Data()
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedData.append(try! Data(contentsOf: unicornImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "data should match expected data")
         }
     }
 
@@ -282,56 +305,58 @@ class MultipartFormDataEncodingTestCase: BaseTestCase {
         // Given
         let multipartFormData = MultipartFormData()
 
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let unicornDataLength = UInt64(NSData(contentsOfURL: unicornImageURL)!.length)
-        let unicornStream = NSInputStream(URL: unicornImageURL)!
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let unicornDataLength = UInt64((try! Data(contentsOf: unicornImageURL)).count)
+        let unicornStream = InputStream(url: unicornImageURL)!
 
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
-        let rainbowDataLength = UInt64(NSData(contentsOfURL: rainbowImageURL)!.length)
-        let rainbowStream = NSInputStream(URL: rainbowImageURL)!
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+        let rainbowDataLength = UInt64((try! Data(contentsOf: rainbowImageURL)).count)
+        let rainbowStream = InputStream(url: rainbowImageURL)!
+
+        multipartFormData.append(unicornStream,
+                                 withLength: unicornDataLength,
+                                 name: "unicorn",
+                                 fileName: "unicorn.png",
+                                 mimeType: "image/png")
+        multipartFormData.append(rainbowStream,
+                                 withLength: rainbowDataLength,
+                                 name: "rainbow",
+                                 fileName: "rainbow.jpg",
+                                 mimeType: "image/jpeg")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(
-            stream: unicornStream,
-            length: unicornDataLength,
-            name: "unicorn",
-            fileName: "unicorn.png",
-            mimeType: "image/png"
-        )
-        multipartFormData.appendBodyPart(
-            stream: rainbowStream,
-            length: rainbowDataLength,
-            name: "rainbow",
-            fileName: "rainbow.jpg",
-            mimeType: "image/jpeg"
-        )
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = NSMutableData()
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedData = Data()
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            expectedData.append(try! Data(contentsOf: unicornImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "data should match expected data")
         }
     }
 
@@ -339,96 +364,99 @@ class MultipartFormDataEncodingTestCase: BaseTestCase {
         // Given
         let multipartFormData = MultipartFormData()
 
-        let loremData = "Lorem ipsum.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+        let loremData = Data("Lorem ipsum.".utf8)
 
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
 
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
-        let rainbowDataLength = UInt64(NSData(contentsOfURL: rainbowImageURL)!.length)
-        let rainbowStream = NSInputStream(URL: rainbowImageURL)!
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+        let rainbowDataLength = UInt64((try! Data(contentsOf: rainbowImageURL)).count)
+        let rainbowStream = InputStream(url: rainbowImageURL)!
+
+        multipartFormData.append(loremData, withName: "lorem")
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+        multipartFormData.append(rainbowStream,
+                                 withLength: rainbowDataLength,
+                                 name: "rainbow",
+                                 fileName: "rainbow.jpg",
+                                 mimeType: "image/jpeg")
+
+        var encodedData: Data?
 
         // When
-        multipartFormData.appendBodyPart(data: loremData, name: "lorem")
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        multipartFormData.appendBodyPart(
-            stream: rainbowStream,
-            length: rainbowDataLength,
-            name: "rainbow",
-            fileName: "rainbow.jpg",
-            mimeType: "image/jpeg"
-        )
-        let encodingResult = multipartFormData.encode()
+        do {
+            encodedData = try multipartFormData.encode()
+        } catch {
+            // No-op
+        }
 
         // Then
-        switch encodingResult {
-        case .Success(let data):
+        XCTAssertNotNil(encodedData, "encoded data should not be nil")
+
+        if let encodedData = encodedData {
             let boundary = multipartFormData.boundary
 
-            let expectedData = NSMutableData()
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"lorem\"\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedData = Data()
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedData.append(Data(
+                "Content-Disposition: form-data; name=\"lorem\"\(crlf)\(crlf)".utf8
             )
-            expectedData.appendData(loremData)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            expectedData.append(loremData)
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedData.append(try! Data(contentsOf: unicornImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
-            XCTAssertEqual(data, expectedData, "data should match expected data")
-        case .Failure:
-            XCTFail("encoding result should not be .Failure")
+            XCTAssertEqual(encodedData, expectedData, "data should match expected data")
         }
     }
+    #endif
 }
 
 // MARK: -
 
 class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
-    let CRLF = EncodingCharacters.CRLF
+    let crlf = EncodingCharacters.crlf
 
     func testWritingEncodedDataBodyPartToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
         let multipartFormData = MultipartFormData()
-        let data = "Lorem ipsum dolor sit amet.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
 
-        var encodingError: NSError?
+        let data = Data("Lorem ipsum dolor sit amet.".utf8)
+        multipartFormData.append(data, withName: "data")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(data: data, name: "data")
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = (
-                BoundaryGenerator.boundary(boundaryType: .Initial, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"data\"\(CRLF)\(CRLF)" +
+            let expectedString = BoundaryGenerator.boundary(forBoundaryType: .initial, boundaryKey: boundary) +
+                "Content-Disposition: form-data; name=\"data\"\(crlf)\(crlf)" +
                 "Lorem ipsum dolor sit amet." +
-                BoundaryGenerator.boundary(boundaryType: .Final, boundaryKey: boundary)
-            ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+                BoundaryGenerator.boundary(forBoundaryType: .final, boundaryKey: boundary)
+            let expectedFileData = Data(expectedString.utf8)
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -438,46 +466,45 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
 
     func testWritingMultipleEncodedDataBodyPartsToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
-        let french = "français".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
-        let japanese = "日本語".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
-        let emoji = "😃👍🏻🍻🎉".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
 
-        var encodingError: NSError?
+        let frenchData = Data("français".utf8)
+        let japaneseData = Data("日本語".utf8)
+        let emojiData = Data("😃👍🏻🍻🎉".utf8)
+
+        multipartFormData.append(frenchData, withName: "french")
+        multipartFormData.append(japaneseData, withName: "japanese")
+        multipartFormData.append(emojiData, withName: "emoji")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(data: french, name: "french")
-        multipartFormData.appendBodyPart(data: japanese, name: "japanese")
-        multipartFormData.appendBodyPart(data: emoji, name: "emoji")
-
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = (
-                BoundaryGenerator.boundary(boundaryType: .Initial, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"french\"\(CRLF)\(CRLF)" +
-                "français" +
-                BoundaryGenerator.boundary(boundaryType: .Encapsulated, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"japanese\"\(CRLF)\(CRLF)" +
-                "日本語" +
-                BoundaryGenerator.boundary(boundaryType: .Encapsulated, boundaryKey: boundary) +
-                "Content-Disposition: form-data; name=\"emoji\"\(CRLF)\(CRLF)" +
-                "😃👍🏻🍻🎉" +
-                BoundaryGenerator.boundary(boundaryType: .Final, boundaryKey: boundary)
-            ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            let expectedString = (
+                BoundaryGenerator.boundary(forBoundaryType: .initial, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"french\"\(crlf)\(crlf)" +
+                    "français" +
+                    BoundaryGenerator.boundary(forBoundaryType: .encapsulated, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"japanese\"\(crlf)\(crlf)" +
+                    "日本語" +
+                    BoundaryGenerator.boundary(forBoundaryType: .encapsulated, boundaryKey: boundary) +
+                    "Content-Disposition: form-data; name=\"emoji\"\(crlf)\(crlf)" +
+                    "😃👍🏻🍻🎉" +
+                    BoundaryGenerator.boundary(forBoundaryType: .final, boundaryKey: boundary)
+            )
+            let expectedFileData = Data(expectedString.utf8)
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -485,40 +512,39 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
         }
     }
 
+    #if !SWIFT_PACKAGE
     func testWritingEncodedFileBodyPartToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
 
-        var encodingError: NSError?
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = NSMutableData()
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedFileData = Data()
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedFileData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedFileData.append(try! Data(contentsOf: unicornImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -528,48 +554,46 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
 
     func testWritingMultipleEncodedFileBodyPartsToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
 
-        var encodingError: NSError?
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+        multipartFormData.append(rainbowImageURL, withName: "rainbow")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        multipartFormData.appendBodyPart(fileURL: rainbowImageURL, name: "rainbow")
-
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = NSMutableData()
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedFileData = Data()
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedFileData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedFileData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            expectedFileData.append(try! Data(contentsOf: unicornImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedFileData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -579,48 +603,43 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
 
     func testWritingEncodedStreamBodyPartToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
 
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let unicornDataLength = UInt64(NSData(contentsOfURL: unicornImageURL)!.length)
-        let unicornStream = NSInputStream(URL: unicornImageURL)!
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let unicornDataLength = UInt64((try! Data(contentsOf: unicornImageURL)).count)
+        let unicornStream = InputStream(url: unicornImageURL)!
 
-        var encodingError: NSError?
+        multipartFormData.append(unicornStream,
+                                 withLength: unicornDataLength,
+                                 name: "unicorn",
+                                 fileName: "unicorn.png",
+                                 mimeType: "image/png")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(
-            stream: unicornStream,
-            length: unicornDataLength,
-            name: "unicorn",
-            fileName: "unicorn.png",
-            mimeType: "image/png"
-        )
-
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = NSMutableData()
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedFileData = Data()
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedFileData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedFileData.append(try! Data(contentsOf: unicornImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -630,66 +649,59 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
 
     func testWritingMultipleEncodedStreamBodyPartsToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
 
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
-        let unicornDataLength = UInt64(NSData(contentsOfURL: unicornImageURL)!.length)
-        let unicornStream = NSInputStream(URL: unicornImageURL)!
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
+        let unicornDataLength = UInt64((try! Data(contentsOf: unicornImageURL)).count)
+        let unicornStream = InputStream(url: unicornImageURL)!
 
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
-        let rainbowDataLength = UInt64(NSData(contentsOfURL: rainbowImageURL)!.length)
-        let rainbowStream = NSInputStream(URL: rainbowImageURL)!
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+        let rainbowDataLength = UInt64((try! Data(contentsOf: rainbowImageURL)).count)
+        let rainbowStream = InputStream(url: rainbowImageURL)!
 
-        var encodingError: NSError?
+        multipartFormData.append(unicornStream,
+                                 withLength: unicornDataLength,
+                                 name: "unicorn",
+                                 fileName: "unicorn.png",
+                                 mimeType: "image/png")
+        multipartFormData.append(rainbowStream,
+                                 withLength: rainbowDataLength,
+                                 name: "rainbow",
+                                 fileName: "rainbow.jpg",
+                                 mimeType: "image/jpeg")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(
-            stream: unicornStream,
-            length: unicornDataLength,
-            name: "unicorn",
-            fileName: "unicorn.png",
-            mimeType: "image/png"
-        )
-        multipartFormData.appendBodyPart(
-            stream: rainbowStream,
-            length: rainbowDataLength,
-            name: "rainbow",
-            fileName: "rainbow.jpg",
-            mimeType: "image/jpeg"
-        )
-
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = NSMutableData()
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedFileData = Data()
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedFileData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedFileData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            expectedFileData.append(try! Data(contentsOf: unicornImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedFileData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
@@ -699,265 +711,211 @@ class MultipartFormDataWriteEncodedDataToDiskTestCase: BaseTestCase {
 
     func testWritingMultipleEncodedBodyPartsWithVaryingTypesToDisk() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should be written to disk")
         let fileURL = temporaryFileURL()
-
         let multipartFormData = MultipartFormData()
 
-        let loremData = "Lorem ipsum.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+        let loremData = Data("Lorem ipsum.".utf8)
 
-        let unicornImageURL = URLForResource("unicorn", withExtension: "png")
+        let unicornImageURL = url(forResource: "unicorn", withExtension: "png")
 
-        let rainbowImageURL = URLForResource("rainbow", withExtension: "jpg")
-        let rainbowDataLength = UInt64(NSData(contentsOfURL: rainbowImageURL)!.length)
-        let rainbowStream = NSInputStream(URL: rainbowImageURL)!
+        let rainbowImageURL = url(forResource: "rainbow", withExtension: "jpg")
+        let rainbowDataLength = UInt64((try! Data(contentsOf: rainbowImageURL)).count)
+        let rainbowStream = InputStream(url: rainbowImageURL)!
 
-        var encodingError: NSError?
+        multipartFormData.append(loremData, withName: "lorem")
+        multipartFormData.append(unicornImageURL, withName: "unicorn")
+        multipartFormData.append(rainbowStream,
+                                 withLength: rainbowDataLength,
+                                 name: "rainbow",
+                                 fileName: "rainbow.jpg",
+                                 mimeType: "image/jpeg")
+
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(data: loremData, name: "lorem")
-        multipartFormData.appendBodyPart(fileURL: unicornImageURL, name: "unicorn")
-        multipartFormData.appendBodyPart(
-            stream: rainbowStream,
-            length: rainbowDataLength,
-            name: "rainbow",
-            fileName: "rainbow.jpg",
-            mimeType: "image/jpeg"
-        )
-
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNil(encodingError, "encoding error should be nil")
 
-        if let fileData = NSData(contentsOfURL: fileURL) {
+        if let fileData = try? Data(contentsOf: fileURL) {
             let boundary = multipartFormData.boundary
 
-            let expectedFileData = NSMutableData()
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Initial, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"lorem\"\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            var expectedFileData = Data()
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .initial, boundaryKey: boundary))
+            expectedFileData.append(Data(
+                "Content-Disposition: form-data; name=\"lorem\"\(crlf)\(crlf)".utf8
             )
-            expectedFileData.appendData(loremData)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(CRLF)" +
-                "Content-Type: image/png\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
             )
-            expectedFileData.appendData(NSData(contentsOfURL: unicornImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Encapsulated, boundaryKey: boundary))
-            expectedFileData.appendData((
-                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(CRLF)" +
-                "Content-Type: image/jpeg\(CRLF)\(CRLF)"
-                ).dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+            expectedFileData.append(loremData)
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"unicorn\"; filename=\"unicorn.png\"\(crlf)" +
+                    "Content-Type: image/png\(crlf)\(crlf)").utf8
             )
-            expectedFileData.appendData(NSData(contentsOfURL: rainbowImageURL)!)
-            expectedFileData.appendData(BoundaryGenerator.boundaryData(boundaryType: .Final, boundaryKey: boundary))
+            )
+            expectedFileData.append(try! Data(contentsOf: unicornImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .encapsulated, boundaryKey: boundary))
+            expectedFileData.append(Data((
+                "Content-Disposition: form-data; name=\"rainbow\"; filename=\"rainbow.jpg\"\(crlf)" +
+                    "Content-Type: image/jpeg\(crlf)\(crlf)").utf8
+            )
+            )
+            expectedFileData.append(try! Data(contentsOf: rainbowImageURL))
+            expectedFileData.append(BoundaryGenerator.boundaryData(boundaryType: .final, boundaryKey: boundary))
 
             XCTAssertEqual(fileData, expectedFileData, "file data should match expected file data")
         } else {
             XCTFail("file data should not be nil")
         }
     }
+    #endif
 }
 
 // MARK: -
 
 class MultipartFormDataFailureTestCase: BaseTestCase {
     func testThatAppendingFileBodyPartWithInvalidLastPathComponentReturnsError() {
-        // Given 
-        let fileURL = NSURL(string: "")!
+        // Given
+        let fileURL = NSURL(string: "")! as URL
         let multipartFormData = MultipartFormData()
+        multipartFormData.append(fileURL, withName: "empty_data")
 
-        var error: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: fileURL, name: "empty_data")
-
-        switch multipartFormData.encode() {
-        case .Failure(let encodingError):
-            error = encodingError
-        default:
-            break
+        do {
+            _ = try multipartFormData.encode()
+        } catch {
+            encodingError = error
         }
 
         // Then
-        XCTAssertNotNil(error, "error should not be nil")
+        XCTAssertNotNil(encodingError, "encoding error should not be nil")
 
-        if let error = error {
-            XCTAssertEqual(error.domain, "com.alamofire.error", "error domain does not match expected value")
-            XCTAssertEqual(error.code, NSURLErrorBadURL, "error code does not match expected value")
-
-            if let failureReason = error.userInfo?[NSLocalizedFailureReasonErrorKey] as? String {
-                let expectedFailureReason = "Failed to extract the fileName of the provided URL: \(fileURL)"
-                XCTAssertEqual(failureReason, expectedFailureReason, "error failure reason does not match expected value")
-            } else {
-                XCTFail("failure reason should not be nil")
-            }
-        }
+        XCTAssertEqual(encodingError?.asAFError?.isBodyPartFilenameInvalid, true)
+        XCTAssertEqual(encodingError?.asAFError?.url, fileURL)
     }
 
     func testThatAppendingFileBodyPartThatIsNotFileURLReturnsError() {
         // Given
-        let fileURL = NSURL(string: "http://example.com/image.jpg")!
+        let fileURL = URL(string: "https://example.com/image.jpg")!
         let multipartFormData = MultipartFormData()
+        multipartFormData.append(fileURL, withName: "empty_data")
 
-        var error: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: fileURL, name: "empty_data")
-
-        switch multipartFormData.encode() {
-        case .Failure(let encodingError):
-            error = encodingError
-        default:
-            break
+        do {
+            _ = try multipartFormData.encode()
+        } catch {
+            encodingError = error
         }
 
         // Then
-        XCTAssertNotNil(error, "error should not be nil")
-
-        if let error = error {
-            XCTAssertEqual(error.domain, "com.alamofire.error", "error domain does not match expected value")
-            XCTAssertEqual(error.code, NSURLErrorBadURL, "error code does not match expected value")
-
-            if let failureReason = error.userInfo?[NSLocalizedFailureReasonErrorKey] as? String {
-                let expectedFailureReason = "The URL does not point to a file URL: \(fileURL)"
-                XCTAssertEqual(failureReason, expectedFailureReason, "error failure reason does not match expected value")
-            } else {
-                XCTFail("failure reason should not be nil")
-            }
-        }
+        XCTAssertNotNil(encodingError, "encoding error should not be nil")
+        XCTAssertEqual(encodingError?.asAFError?.isBodyPartURLInvalid, true)
+        XCTAssertEqual(encodingError?.asAFError?.url, fileURL)
     }
 
     func testThatAppendingFileBodyPartThatIsNotReachableReturnsError() {
         // Given
-        let fileURL = NSURL(fileURLWithPath: NSTemporaryDirectory().stringByAppendingPathComponent("does_not_exist.jpg"))!
+        let filePath = (NSTemporaryDirectory() as NSString).appendingPathComponent("does_not_exist.jpg")
+        let fileURL = URL(fileURLWithPath: filePath)
         let multipartFormData = MultipartFormData()
+        multipartFormData.append(fileURL, withName: "empty_data")
 
-        var error: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: fileURL, name: "empty_data")
-
-        switch multipartFormData.encode() {
-        case .Failure(let encodingError):
-            error = encodingError
-        default:
-            break
+        do {
+            _ = try multipartFormData.encode()
+        } catch {
+            encodingError = error
         }
 
         // Then
-        XCTAssertNotNil(error, "error should not be nil")
+        XCTAssertNotNil(encodingError, "encoding error should not be nil")
 
-        if let error = error {
-            XCTAssertEqual(error.domain, "com.alamofire.error", "error domain does not match expected value")
-            XCTAssertEqual(error.code, NSURLErrorBadURL, "error code does not match expected value")
-
-            if let failureReason = error.userInfo?[NSLocalizedFailureReasonErrorKey] as? String {
-                let expectedFailureReason = "The URL is not reachable: \(fileURL)"
-                XCTAssertEqual(failureReason, expectedFailureReason, "error failure reason does not match expected value")
-            } else {
-                XCTFail("failure reason should not be nil")
-            }
-        }
+        XCTAssertEqual(encodingError?.asAFError?.isBodyPartFileNotReachableWithError, true)
+        XCTAssertEqual(encodingError?.asAFError?.url, fileURL)
     }
 
     func testThatAppendingFileBodyPartThatIsDirectoryReturnsError() {
         // Given
-        let directoryURL = NSURL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)!
+        let directoryURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let multipartFormData = MultipartFormData()
+        multipartFormData.append(directoryURL, withName: "empty_data", fileName: "empty", mimeType: "application/octet")
 
-        var error: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(fileURL: directoryURL, name: "empty_data")
-
-        switch multipartFormData.encode() {
-        case .Failure(let encodingError):
-            error = encodingError
-        default:
-            break
+        do {
+            _ = try multipartFormData.encode()
+        } catch {
+            encodingError = error
         }
 
         // Then
-        XCTAssertNotNil(error, "error should not be nil")
-
-        if let error = error {
-            XCTAssertEqual(error.domain, "com.alamofire.error", "error domain does not match expected value")
-            XCTAssertEqual(error.code, NSURLErrorBadURL, "error code does not match expected value")
-
-            if let failureReason = error.userInfo?[NSLocalizedFailureReasonErrorKey] as? String {
-                let expectedFailureReason = "The URL is a directory, not a file: \(directoryURL)"
-                XCTAssertEqual(failureReason, expectedFailureReason, "error failure reason does not match expected value")
-            } else {
-                XCTFail("failure reason should not be nil")
-            }
-        }
+        XCTAssertNotNil(encodingError, "encoding error should not be nil")
+        XCTAssertEqual(encodingError?.asAFError?.isBodyPartFileIsDirectory, true)
+        XCTAssertEqual(encodingError?.asAFError?.url, directoryURL)
     }
 
     func testThatWritingEncodedDataToExistingFileURLFails() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should fail when writing to disk")
-
         let fileURL = temporaryFileURL()
-        "dummy data".writeToURL(fileURL, atomically: true, encoding: NSUTF8StringEncoding, error: nil)
+
+        var writerError: Error?
+
+        do {
+            try "dummy data".write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            writerError = error
+        }
 
         let multipartFormData = MultipartFormData()
-        let data = "Lorem ipsum dolor sit amet.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+        let data = Data("Lorem ipsum dolor sit amet.".utf8)
+        multipartFormData.append(data, withName: "data")
 
-        var encodingError: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(data: data, name: "data")
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
+        XCTAssertNil(writerError, "writer error should be nil")
         XCTAssertNotNil(encodingError, "encoding error should not be nil")
-
-        if let encodingError = encodingError {
-            XCTAssertEqual(encodingError.domain, "com.alamofire.error", "encoding error domain does not match expected value")
-            XCTAssertEqual(encodingError.code, NSURLErrorBadURL, "encoding error code does not match expected value")
-        }
+        XCTAssertEqual(encodingError?.asAFError?.isOutputStreamFileAlreadyExists, true)
     }
 
     func testThatWritingEncodedDataToBadURLFails() {
         // Given
-        let expectation = expectationWithDescription("multipart form data should fail when writing to disk")
-        let fileURL = NSURL(string: "/this/is/not/a/valid/url")!
+        let fileURL = URL(string: "/this/is/not/a/valid/url")!
 
         let multipartFormData = MultipartFormData()
-        let data = "Lorem ipsum dolor sit amet.".dataUsingEncoding(NSUTF8StringEncoding, allowLossyConversion: false)!
+        let data = Data("Lorem ipsum dolor sit amet.".utf8)
+        multipartFormData.append(data, withName: "data")
 
-        var encodingError: NSError?
+        var encodingError: Error?
 
         // When
-        multipartFormData.appendBodyPart(data: data, name: "data")
-        multipartFormData.writeEncodedDataToDisk(fileURL) { error in
+        do {
+            try multipartFormData.writeEncodedData(to: fileURL)
+        } catch {
             encodingError = error
-            expectation.fulfill()
         }
-
-        waitForExpectationsWithTimeout(defaultTimeout, handler: nil)
 
         // Then
         XCTAssertNotNil(encodingError, "encoding error should not be nil")
-
-        if let encodingError = encodingError {
-            XCTAssertEqual(encodingError.domain, "com.alamofire.error", "encoding error domain does not match expected value")
-            XCTAssertEqual(encodingError.code, NSURLErrorBadURL, "encoding error code does not match expected value")
-        }
+        XCTAssertEqual(encodingError?.asAFError?.isOutputStreamURLInvalid, true)
     }
 }
